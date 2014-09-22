@@ -65,9 +65,16 @@ end
 def get_mp3_tags path
   raw = `id3tool #{File.expand_path(path.shellescape)}`
   raise "Error processing path for \"#{path}\"" if raw.nil? || raw.empty?
-  o = raw.split("\n").inject({}) do |memo, pair|
-    a = pair.split(":")
-    memo.merge( { normalize_tag(a[0].strip.snake.to_sym) => a[1..-1].join(":").strip } )
+  begin
+      o = raw.force_encoding("iso-8859-1").split("\n").inject({}) { |memo, pair|
+        a = pair.split(":")
+        next memo if a.empty?
+        memo.merge( { normalize_tag(a[0].strip.snake.to_sym) => a[1..-1].join(":").strip } )
+      }
+  rescue ArgumentError, NameError
+    $stderr.puts "Error processing file #{raw} :#{$!}"
+    $stderr.puts "Raw:#{raw}\n o:#{o}\n a:#{a}"
+   exit
   end
   o.merge({:format=>:mp3})
 end
@@ -78,7 +85,7 @@ $stderr.puts ARGV[1]
 
 src_dir = ARGV[0]
 dst_dir =ARGV[1]
-rej_dir = "/nas/scratch/rejected/"
+rej_dir = "/scratch/rejected/"
 
 Syslog.open("media-importer", Syslog::LOG_CONS | Syslog::LOG_NDELAY | Syslog::LOG_PERROR | Syslog::LOG_PID, Syslog::LOG_DAEMON | Syslog::LOG_LOCAL1)
 Syslog.log(Syslog::LOG_INFO, " importing from %s to %s", src_dir, dst_dir)
@@ -103,7 +110,7 @@ Syslog.log(Syslog::LOG_INFO, " Indexing %d files in %s", src_files.size, src_dir
 all_files = src_files.inject([]) do |memo, path|
   Syslog.log(Syslog::LOG_INFO, " %d files indexed", count) if (count += 1) % 100 == 0
   tags = get_tags path
-  memo << {:SourcePath => path, :Tags => tags, :DestPath => normalize_path(tags, src_dir) }
+  memo << {:SourcePath => path, :Tags => tags, :DestPath => normalize_path(tags, dst_dir) }
 end
 
 files = all_files.group_by {|index| File.extname(index[:SourcePath])[1..-1].to_sym}
